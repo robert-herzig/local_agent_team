@@ -1,0 +1,5 @@
+ollama
+trafilatura
+beautifulsoup4
+colorama
+requests
