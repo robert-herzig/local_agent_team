@@ -1,0 +1,32 @@
+# Backend dependencies
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+websockets==12.0
+python-multipart==0.0.6
+pydantic==2.5.0
+
+# Your existing dependencies
+ollama
+requests
+trafilatura
+beautifulsoup4
+colorama
+
+# Additional dependencies for web interface
+aiofiles==23.2.1
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# RAG dependencies
+langchain==0.1.20
+chromadb==0.4.18
+sentence-transformers==2.2.2
+PyPDF2==3.0.1
+pdfplumber==0.10.3
+python-docx==1.1.0
+tiktoken==0.5.2
+numpy>=1.21.0
+
+# Optional: Advanced document processing
+# unstructured==0.12.0  # For advanced document parsing
+# pytesseract==0.3.10   # For OCR if needed

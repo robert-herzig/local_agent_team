@@ -9,6 +9,8 @@ import os
 import time
 import random
 from colorama import init, Fore, Style
+import base64
+from datetime import datetime
 
 # Initialize colorama for colored output
 init()
@@ -492,12 +494,230 @@ class SearchEnhancedChat:
             return response['response']
         except Exception as e:
             return f"Error generating answer: {str(e)}"
+    
+    def is_image_request(self, question):
+        """Check if the user is requesting image generation."""
+        image_keywords = [
+            'generate image', 'create image', 'make image', 'draw', 'picture', 'photo',
+            'generate picture', 'create picture', 'make picture', 'show me', 'visualize',
+            'image of', 'picture of', 'drawing of', 'illustration of', 'artwork of',
+            'generate art', 'create art', 'make art', 'paint', 'sketch', 'render'
+        ]
+        
+        question_lower = question.lower()
+        return any(keyword in question_lower for keyword in image_keywords)
+    
+    def extract_image_prompt(self, question):
+        """Extract the image description from the user's request."""
+        try:
+            # Use the main model to extract and improve the image prompt
+            prompt_template = self.prompts.get("image_prompt_extraction", 
+                f"Extract and improve the image description from this request. Return ONLY the image description, no other text.\n\nUser request: {{question}}\n\nImage description:")
+            
+            response = ollama.generate(
+                model=self.main_model,
+                prompt=prompt_template.format(question=question)
+            )
+            
+            description = response['response'].strip()
+            
+            # Clean up the description
+            description = description.replace('"', '').replace("'", '')
+            
+            # If the description is too short or doesn't make sense, fallback to keyword extraction
+            if len(description) < 10:
+                # Remove image request keywords and extract the subject
+                clean_question = question.lower()
+                remove_words = ['generate', 'create', 'make', 'draw', 'show', 'me', 'image', 'picture', 'photo', 'of', 'a', 'an', 'the']
+                words = clean_question.split()
+                filtered_words = [word for word in words if word not in remove_words]
+                description = ' '.join(filtered_words)
+            
+            return description if description else "abstract art"
+            
+        except Exception as e:
+            print(f"{Fore.RED}Error extracting image prompt: {e}{Style.RESET_ALL}")
+            # Fallback: simple keyword extraction
+            words = question.split()
+            return ' '.join(words[2:]) if len(words) > 2 else "abstract art"
+    
+    def generate_image_ollama(self, prompt):
+        """Generate image using Ollama's vision models (if available)."""
+        try:
+            print(f"{Fore.CYAN}🎨 Attempting to generate image with Ollama...{Style.RESET_ALL}")
+            
+            # Try to use a vision model for image generation
+            # Note: This requires specific vision models that support image generation
+            vision_models = ["llava", "llava:13b", "llava:7b", "bakllava"]
+            
+            for model in vision_models:
+                try:
+                    response = ollama.generate(
+                        model=model,
+                        prompt=f"Generate a detailed description for creating an image of: {prompt}"
+                    )
+                    print(f"{Fore.YELLOW}📝 Enhanced prompt: {response['response'][:100]}...{Style.RESET_ALL}")
+                    return response['response']
+                except:
+                    continue
+            
+            return None
+            
+        except Exception as e:
+            print(f"{Fore.RED}Error with Ollama image generation: {e}{Style.RESET_ALL}")
+            return None
+    
+    def generate_image_stable_diffusion_api(self, prompt):
+        """Generate image using Stable Diffusion API (Stability AI or local API)."""
+        try:
+            print(f"{Fore.CYAN}🎨 Generating image with Stable Diffusion API...{Style.RESET_ALL}")
+            
+            # Try local Stable Diffusion WebUI API first (if running on localhost:7860)
+            local_api_url = "http://127.0.0.1:7860/sdapi/v1/txt2img"
+            
+            payload = {
+                "prompt": prompt,
+                "negative_prompt": "blurry, low quality, distorted, ugly, bad anatomy",
+                "steps": 20,
+                "width": 512,
+                "height": 512,
+                "cfg_scale": 7,
+                "sampler_name": "DPM++ 2M Karras"
+            }
+            
+            headers = {"Content-Type": "application/json"}
+            
+            print(f"{Fore.CYAN}🔗 Trying local Stable Diffusion WebUI...{Style.RESET_ALL}")
+            response = requests.post(local_api_url, json=payload, headers=headers, timeout=60)
+            
+            if response.status_code == 200:
+                result = response.json()
+                if 'images' in result and result['images']:
+                    image_data = result['images'][0]
+                    return self.save_generated_image(image_data, prompt)
+                else:
+                    print(f"{Fore.RED}No image data in API response{Style.RESET_ALL}")
+                    return None
+            else:
+                print(f"{Fore.YELLOW}Local API not available (status: {response.status_code}){Style.RESET_ALL}")
+                return None
+                
+        except requests.exceptions.ConnectionError:
+            print(f"{Fore.YELLOW}Local Stable Diffusion WebUI not running{Style.RESET_ALL}")
+            return None
+        except Exception as e:
+            print(f"{Fore.RED}Error with Stable Diffusion API: {e}{Style.RESET_ALL}")
+            return None
+    
+    def save_generated_image(self, image_data, prompt):
+        """Save generated image to file."""
+        try:
+            # Create images directory if it doesn't exist
+            images_dir = os.path.join(os.path.dirname(__file__), 'generated_images')
+            os.makedirs(images_dir, exist_ok=True)
+            
+            # Generate filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            safe_prompt = re.sub(r'[^a-zA-Z0-9_\-]', '_', prompt[:30])
+            filename = f"{timestamp}_{safe_prompt}.png"
+            filepath = os.path.join(images_dir, filename)
+            
+            # Decode and save image
+            image_bytes = base64.b64decode(image_data)
+            with open(filepath, 'wb') as f:
+                f.write(image_bytes)
+            
+            print(f"{Fore.GREEN}✓ Image saved: {filepath}{Style.RESET_ALL}")
+            return filepath
+            
+        except Exception as e:
+            print(f"{Fore.RED}Error saving image: {e}{Style.RESET_ALL}")
+            return None
+    
+    def generate_image_mock(self, prompt):
+        """Generate a mock image response for testing when no API is available."""
+        print(f"{Fore.YELLOW}📝 Mock image generation for: {prompt}{Style.RESET_ALL}")
+        
+        # Create a simple text file as a placeholder
+        try:
+            images_dir = os.path.join(os.path.dirname(__file__), 'generated_images')
+            os.makedirs(images_dir, exist_ok=True)
+            
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            safe_prompt = re.sub(r'[^a-zA-Z0-9_\-]', '_', prompt[:30])
+            filename = f"{timestamp}_{safe_prompt}_MOCK.txt"
+            filepath = os.path.join(images_dir, filename)
+            
+            with open(filepath, 'w') as f:
+                f.write(f"Mock image placeholder\n")
+                f.write(f"Prompt: {prompt}\n")
+                f.write(f"Generated at: {datetime.now()}\n")
+                f.write(f"\nTo enable real image generation:\n")
+                f.write(f"1. Install Stable Diffusion WebUI (AUTOMATIC1111)\n")
+                f.write(f"2. Start it with --api flag\n")
+                f.write(f"3. Or add your Stability AI API key\n")
+            
+            return filepath
+            
+        except Exception as e:
+            print(f"{Fore.RED}Error creating mock image: {e}{Style.RESET_ALL}")
+            return None
+    
+    def handle_image_request(self, question):
+        """Handle image generation requests."""
+        try:
+            print(f"{Fore.CYAN}🎨 Processing image generation request...{Style.RESET_ALL}")
+            
+            # Extract image prompt from question
+            image_prompt = self.extract_image_prompt(question)
+            print(f"{Fore.CYAN}📝 Image prompt: {image_prompt}{Style.RESET_ALL}")
+            
+            # Try different image generation methods
+            result_path = None
+            
+            # Method 1: Try Stable Diffusion API
+            result_path = self.generate_image_stable_diffusion_api(image_prompt)
+            
+            # Method 2: If API fails, try Ollama vision models for enhanced description
+            if not result_path:
+                enhanced_description = self.generate_image_ollama(image_prompt)
+                if enhanced_description:
+                    print(f"{Fore.YELLOW}🔄 Trying API again with enhanced prompt...{Style.RESET_ALL}")
+                    result_path = self.generate_image_stable_diffusion_api(enhanced_description)
+            
+            # Method 3: Create mock response if all else fails
+            if not result_path:
+                result_path = self.generate_image_mock(image_prompt)
+            
+            if result_path:
+                response = f"I've generated an image based on your request!\n\n"
+                response += f"📝 **Prompt:** {image_prompt}\n"
+                response += f"💾 **Saved to:** {result_path}\n\n"
+                
+                if result_path.endswith('_MOCK.txt'):
+                    response += f"⚠️ **Note:** This is a mock response. To generate real images:\n"
+                    response += f"1. Install Stable Diffusion WebUI (AUTOMATIC1111)\n"
+                    response += f"2. Start it with `--api` flag on localhost:7860\n"
+                    response += f"3. Or configure a Stability AI API key\n\n"
+                else:
+                    response += f"✨ **Real image generated successfully!**\n\n"
+                
+                response += f"You can view the {'file' if result_path.endswith('.txt') else 'image'} at the saved location."
+                
+                return response
+            else:
+                return "Sorry, I wasn't able to generate an image at this time. Please check if Stable Diffusion WebUI is running with the --api flag, or try again later."
+                
+        except Exception as e:
+            return f"Error processing image request: {str(e)}"
 
     def chat(self):
-        """Main chat loop with search enhancement and conversation memory."""
-        print(f"{Fore.CYAN}Search-Enhanced Chat System with Conversation Memory{Style.RESET_ALL}")
+        """Main chat loop with search enhancement, conversation memory, and image generation."""
+        print(f"{Fore.CYAN}Search-Enhanced Chat System with Conversation Memory & Image Generation{Style.RESET_ALL}")
         print(f"{Fore.YELLOW}Models: Query Gen: {self.search_query_model} | Source Selection: {self.source_selection_model} | Main: {self.main_model}{Style.RESET_ALL}")
-        print(f"{Fore.GREEN}Type 'exit' to quit{Style.RESET_ALL}\n")
+        print(f"{Fore.MAGENTA}🎨 Image Generation: Stable Diffusion API supported{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}Type 'exit' to quit{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}💡 Try: 'generate an image of a sunset over mountains' or 'create a picture of a cute cat'{Style.RESET_ALL}\n")
         
         while True:
             question = input(f"{Fore.BLUE}You: {Style.RESET_ALL}")
@@ -508,6 +728,14 @@ class SearchEnhancedChat:
                 continue
             
             try:
+                # Step -1: Check if this is an image generation request
+                if self.is_image_request(question):
+                    print(f"{Fore.CYAN}🎨 Image generation request detected!{Style.RESET_ALL}")
+                    final_answer = self.handle_image_request(question)
+                    print(f"\n{Fore.GREEN}Assistant: {Style.RESET_ALL}{final_answer}\n")
+                    self.add_to_conversation_history(question, final_answer)
+                    continue
+                
                 # Step 0: First check if we can answer from conversation context (quick check)
                 if not self.needs_search(question) and self.conversation_history:
                     print(f"{Fore.YELLOW}💭 Answering from conversation context...{Style.RESET_ALL}")

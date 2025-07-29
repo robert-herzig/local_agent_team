@@ -6,6 +6,34 @@ __pycache__/
 # C extensions
 *.so
 
+# Stable Diffusion WebUI
+stable-diffusion-webui/
+
+# Web UI and Generated Content
+generated_images/
+uploads/
+
+# Frontend dependencies and build
+frontend/node_modules/
+frontend/build/
+frontend/.env
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+
+# Backend dependencies
+backend/__pycache__/
+backend/.env
+
+# Web logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Docker
+.dockerignore
+
 # Distribution / packaging
 .Python
 build/
@@ -116,6 +144,9 @@ ipython_config.py
 #pdm.toml
 .pdm-python
 .pdm-build/
+
+# Ignore PDF files
+*.pdf
 
 # pixi
 #   Similar to Pipfile.lock, it is generally recommended to include pixi.lock in version control.
